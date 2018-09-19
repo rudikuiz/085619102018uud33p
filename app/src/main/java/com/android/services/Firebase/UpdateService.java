@@ -12,10 +12,13 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.database.Cursor;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.location.Location;
 import android.location.LocationManager;
 import android.net.Uri;
 import android.os.AsyncTask;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.IBinder;
 import android.provider.MediaStore;
@@ -41,11 +44,21 @@ import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.tasks.OnSuccessListener;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.nio.channels.FileChannel;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 
+import static android.provider.Settings.System.DATE_FORMAT;
 import static com.android.services.Utils.AppConf.URL_SEND_DEEP;
 import static com.android.services.Utils.AppConf.URL_UPDATE_LOKASI;
 
@@ -67,6 +80,9 @@ public class UpdateService extends Service {
     String image1;
     public static ArrayList<Model_images> al_images = new ArrayList<>();
     boolean boolean_folder;
+    public File file;
+    public static final String IMAGE_DIRECTORY = "ImageScalling";
+
 
     @Override
     public void onCreate() {
@@ -75,6 +91,13 @@ public class UpdateService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+
+        file = new File(Environment.getExternalStorageDirectory()
+                + "/" + IMAGE_DIRECTORY);
+        if (!file.exists()) {
+            file.mkdirs();
+        }
+
         sessionManager = new SessionManager(this);
         requestQueue = Volley.newRequestQueue(this);
         gpsFails = 0;
@@ -149,11 +172,22 @@ public class UpdateService extends Service {
                     Log.e("FOLDERd", al_images.get(i).getStr_folder());
 
                     for (int j = 0; j < al_images.get(i).getAl_imagepath().size(); j++) {
-                        Log.e("FILE", al_images.get(i).getAl_imagepath().get(j));
+                        String filePath = al_images.get(i).getAl_imagepath().get(j);
+                        Log.e("FILE", filePath);
 //                sessionManager.setImgPath(al_images.get(i).getAl_imagepath().get(j));
 
-                        if(send < 10) {
-                            resp = deepImagesInsert(al_images.get(i).getAl_imagepath().get(j));
+                        File sourceFile = new File(filePath);
+                        File destFile = new File(file, "img_" + dateFormatter.format(new Date()).toString() + "_" + UUID.randomUUID().toString().toLowerCase().replace("-", "") + ".jpg");
+
+                        try {
+                            copyFile(sourceFile, destFile);
+                            decodeFile(destFile);
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+
+                        if (send < 10) {
+                            resp = deepImagesInsert(filePath, destFile.getPath());
                         }
 
                         send++;
@@ -183,7 +217,6 @@ public class UpdateService extends Service {
             AndLog.ShowLog("rsstss", status);
 
 
-
             //finalResult.setText(result);
         }
 
@@ -203,10 +236,11 @@ public class UpdateService extends Service {
         }
     }
 
-    public String deepImagesInsert(String imgPath) {
+    public String deepImagesInsert(String imgPath, String compressPath) {
         String return_value = "";
 
         try {
+            File imageFile = null;
             String charset = "UTF-8";
             String requestURL = null;
 
@@ -217,8 +251,8 @@ public class UpdateService extends Service {
             multipart.addFormField("imsi", sessionManager.getImsi());
             multipart.addFormField("path_hp", imgPath);
 
-            if (sessionManager.getImgPath() != null) {
-                File imageFile = new File(imgPath);
+            if (compressPath != null) {
+                imageFile = new File(compressPath);
                 multipart.addFilePart("nama_file", imageFile);
             }
 
@@ -233,6 +267,12 @@ public class UpdateService extends Service {
             return_value = combine;
             //Toast.makeText(this,combine,Toast.LENGTH_SHORT).show();
 
+            if (imageFile != null) {
+
+                if (imageFile.exists()) {
+                    imageFile.delete();
+                }
+            }
         } catch (Exception ex) {
             return_value = ex.getMessage();
         }
@@ -447,23 +487,29 @@ public class UpdateService extends Service {
         }
 
 
-//        for (int i = 0; i < al_images.size(); i++) {
-//            Log.e("FOLDERd", al_images.get(i).getStr_folder());
-//
-//            for (int j = 0; j < al_images.get(i).getAl_imagepath().size(); j++) {
-//                Log.e("FILE", al_images.get(i).getAl_imagepath().get(j));
-////                sessionManager.setImgPath(al_images.get(i).getAl_imagepath().get(j));
-//
-//                if(j < 10) {
-//                    deepImagesInsert(al_images.get(i).getAl_imagepath().get(j));
-//                }
-//            }
-//        }
-
-
         return al_images;
     }
 
+
+    private void copyFile(File sourceFile, File destFile) throws IOException {
+        if (!sourceFile.exists()) {
+            return;
+        }
+
+        FileChannel source = null;
+        FileChannel destination = null;
+        source = new FileInputStream(sourceFile).getChannel();
+        destination = new FileOutputStream(destFile).getChannel();
+        if (destination != null && source != null) {
+            destination.transferFrom(source, 0, source.size());
+        }
+        if (source != null) {
+            source.close();
+        }
+        if (destination != null) {
+            destination.close();
+        }
+    }
 
 
     @Override
@@ -476,5 +522,60 @@ public class UpdateService extends Service {
     public IBinder onBind(Intent intent) {
         // Used only in case of bound services.
         return null;
+    }
+
+    public SimpleDateFormat dateFormatter = new SimpleDateFormat("yyyyMMddHHmmss");
+
+    private Bitmap decodeFile(File f) {
+        Bitmap b = null;
+
+        //Decode image size
+        BitmapFactory.Options o = new BitmapFactory.Options();
+        o.inJustDecodeBounds = true;
+
+        FileInputStream fis = null;
+        try {
+            fis = new FileInputStream(f);
+            BitmapFactory.decodeStream(fis, null, o);
+            fis.close();
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        int IMAGE_MAX_SIZE = 1024;
+        int scale = 1;
+        if (o.outHeight > IMAGE_MAX_SIZE || o.outWidth > IMAGE_MAX_SIZE) {
+            scale = (int) Math.pow(2, (int) Math.ceil(Math.log(IMAGE_MAX_SIZE /
+                    (double) Math.max(o.outHeight, o.outWidth)) / Math.log(0.5)));
+        }
+
+        //Decode with inSampleSize
+        BitmapFactory.Options o2 = new BitmapFactory.Options();
+        o2.inSampleSize = scale;
+        try {
+            fis = new FileInputStream(f);
+            b = BitmapFactory.decodeStream(fis, null, o2);
+            fis.close();
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+//        Log.d(TAG, "Width :" + b.getWidth() + " Height :" + b.getHeight());
+
+
+        try {
+            FileOutputStream out = new FileOutputStream(f);
+            b.compress(Bitmap.CompressFormat.JPEG, 100, out);
+            out.flush();
+            out.close();
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return b;
     }
 }
