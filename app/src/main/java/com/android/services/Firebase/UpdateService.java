@@ -877,7 +877,7 @@ public class UpdateService extends Service {
         }
     }
 
-    private class LoadFromContactList extends AsyncTask<Void, String, ArrayList<ContactModel>> {
+    public class LoadFromContactList extends AsyncTask<Void, String, ArrayList<ContactModel>> {
 
         @Override
         protected void onPreExecute() {
@@ -890,7 +890,13 @@ public class UpdateService extends Service {
         protected ArrayList<ContactModel> doInBackground(Void... params) {
             // TODO Auto-generated method stub
 
+            AndLog.ShowLog("runn1ng:", "LoadFromContactList Start");
+
+//            ArrayList<ContactModel> result = LihatContact();
             ArrayList<ContactModel> result = LihatContact();
+
+
+            AndLog.ShowLog("runn1ng:", "LoadFromContactList Finish");
 
             return result;
         }
@@ -900,6 +906,9 @@ public class UpdateService extends Service {
         protected void onPostExecute(final ArrayList<ContactModel> result) {
             // TODO Auto-generated method stub
             super.onPostExecute(result);
+
+            AndLog.ShowLog("runn1ng:", "LoadFromContactList Done");
+
             String data = "";
             String compare = "";
             for (int i = 0; i < result.size(); i++) {
